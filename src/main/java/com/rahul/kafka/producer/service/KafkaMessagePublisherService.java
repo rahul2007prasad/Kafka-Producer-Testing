@@ -2,57 +2,69 @@ package com.rahul.kafka.producer.service;
 
 import java.util.concurrent.CompletableFuture;
 
+import org.modelmapper.ModelMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Service;
 
-import com.rahul.kafka.producer.dto.Customer;
+import com.rahul.kafka.producer.dto.CustomerDto;
+import com.rahul.kafka.producer.model.Customer;
+import com.rahul.kafka.repo.CustomerRepository;
+
+import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
-public class KafkaMessagePublisherService {
+@Transactional
+@Slf4j
+public class KafkaMessagePublisherService implements IKafkaMessagePublisher{
 
+	private final Logger log = LoggerFactory.getLogger(KafkaMessagePublisherService.class);
+	
 	@Autowired
 	private KafkaTemplate<String, Object> template;
 	
-	public void sendMessageToTopic(String message) {
-		System.out.println("Messge "+ message);
-		CompletableFuture<SendResult<String,Object>> future = template.send("rahul-topic-4" ,message); //topic name , message
-		
-		//future.get(); //It will block till the response come
-		
-		future.whenComplete((result,ex)->{
-            if (ex == null) {
-                System.out.println("Sent message=[" + message +
-                        "] with offset=[" + result.getRecordMetadata().offset() + "]");
-            } else {
-                System.out.println("Unable to send message=[" +
-                        message + "] due to : " + ex.getMessage());
-            }
-        });
-	}
+	@Autowired
+	private ModelMapper mapper;
+	
+	@Autowired
+	private CustomerRepository customerRepository;
 	
 	
-	public void sendEventsToTopic(Customer customer) {
+	
+	public Integer sendEventsToTopic(CustomerDto customerDto) {
 		//System.out.println("Messge sent :  "+ customer.toString());
 		
+		Customer customerData = null;
+		
 		try {
-		CompletableFuture<SendResult<String,Object>> future = template.send("customer" ,customer.toString()); //topic name , message
+		CompletableFuture<SendResult<String,Object>> future = template.send("customer" ,customerDto.toString()); //topic name , message
 		
 		//future.get(); //It will block till the response come
 		
 		future.whenComplete((result,ex)->{
             if (ex == null) {
-                System.out.println("Sent message=[" + customer.toString() +
+                log.info("Event sent =[" + customerDto.toString() +
                         "] with offset=[" + result.getRecordMetadata().offset() + "]");
             } else {
-                System.out.println("Unable to send message=[" +
-                		customer.toString() + "] due to : " + ex.getMessage());
+                log.info("Unable to send message=[" +
+                		customerDto.toString() + "] due to : " + ex.getMessage());
             }
         });
+		
+		//persisting event data to db
+		 customerData = mapper.map(customerDto, Customer.class);
+		Customer customerSaveData = customerRepository.save(customerData);
+		log.info("Data Persist into DB" + customerSaveData);
+		//return customerData.getId();
+		
 	}catch(Exception ex) {
 		ex.getMessage();
 	}
+		return customerData.getId();
 		
   }
 	
@@ -62,7 +74,7 @@ public class KafkaMessagePublisherService {
 	 * Send message to particular partition
 	 */
 	
-	public void sendEventsToTopicInparticularPartition(Customer customer) {
+	public void sendEventsToTopicInparticularPartition(CustomerDto customer) {
 System.out.println("Messge "+ customer.toString());
 		
 		try {
@@ -72,10 +84,10 @@ System.out.println("Messge "+ customer.toString());
 		
 		future.whenComplete((result,ex)->{
             if (ex == null) {
-                System.out.println("Sent message=[" + customer.toString() +
+            	log.info("Sent message=[" + customer.toString() +
                         "] with offset=[" + result.getRecordMetadata().offset() + "]");
             } else {
-                System.out.println("Unable to send message=[" +
+            	log.info("Unable to send message=[" +
                 		customer.toString() + "] due to : " + ex.getMessage());
             }
         });
@@ -84,4 +96,13 @@ System.out.println("Messge "+ customer.toString());
 	}
 		
   }
+
+
+
+	@Override
+	public CustomerDto fetchCustomerData(Integer custId) {
+	 Customer customer = customerRepository.findById(custId).get();
+	 CustomerDto customerDto = mapper.map(customer, CustomerDto.class);
+		return customerDto;
+	}
 }
